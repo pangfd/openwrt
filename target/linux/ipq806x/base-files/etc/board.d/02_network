@@ -17,6 +17,10 @@ nec,wg2600hp)
 	ucidef_add_switch "switch0" \
 		"2:lan" "3:lan" "4:lan" "5:lan" "6@eth1" "1:wan" "0@eth0"
 	;;
+askey,rt4230w)
+	ucidef_add_switch "switch0" \
+		"2:lan:4" "3:lan:3" "4:lan:2" "5:lan:1" "6@eth1" "1:wan" "0@eth0"
+	;;
 buffalo,wxr-2533dhp |\
 compex,wpq864 |\
 netgear,d7800 |\

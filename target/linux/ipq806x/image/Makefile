@@ -105,6 +105,19 @@ define Device/asrock_g10
 endef
 TARGET_DEVICES += asrock_g10
 
+define Device/askey_rt4230w
+	$(call Device/FitImage)
+	$(call Device/UbiFit)
+	DEVICE_VENDOR := Askey
+	DEVICE_MODEL := RT4230W
+	BLOCKSIZE := 128k
+	PAGESIZE := 2048
+	SOC := qcom-ipq8065
+	KERNEL += | uImage none
+	DEVICE_PACKAGES := ath10k-firmware-qca9984-ct -kmod-ata-ahci -kmod-ata-ahci-platform -kmod-usb-ledtrig-usbport
+endef
+TARGET_DEVICES += askey_rt4230w
+
 define Device/buffalo_wxr-2533dhp
 	$(call Device/LegacyImage)
 	SOC := qcom-ipq8064
