@@ -67,7 +67,6 @@ config V2RAY_EXCLUDE_ASSETS
 
 config V2RAY_COMPRESS_UPX
 	bool "Compress executable files with UPX"
-	default y
 endmenu
 endef
 
