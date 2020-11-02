@@ -1,0 +1,23 @@
+From bf88dc327de8c311078da557788af5d88b74c8e5 Mon Sep 17 00:00:00 2001
+From: kbuild test robot <lkp@intel.com>
+Date: Thu, 2 Apr 2020 09:25:48 +0800
+Subject: [PATCH] net: dsa: dsa_bridge_mtu_normalization() can be static
+
+Fixes: f41071407c85 ("net: dsa: implement auto-normalization of MTU for bridge hardware datapath")
+Signed-off-by: kbuild test robot <lkp@intel.com>
+Signed-off-by: David S. Miller <davem@davemloft.net>
+---
+ net/dsa/slave.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+--- a/net/dsa/slave.c
++++ b/net/dsa/slave.c
+@@ -1217,7 +1217,7 @@ static void dsa_hw_port_list_free(struct
+ }
+ 
+ /* Make the hardware datapath to/from @dev limited to a common MTU */
+-void dsa_bridge_mtu_normalization(struct dsa_port *dp)
++static void dsa_bridge_mtu_normalization(struct dsa_port *dp)
+ {
+ 	struct list_head hw_port_list;
+ 	struct dsa_switch_tree *dst;
