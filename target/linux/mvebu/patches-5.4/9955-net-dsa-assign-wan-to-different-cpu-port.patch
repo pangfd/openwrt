@@ -1,0 +1,22 @@
+--- a/net/dsa/dsa2.c
++++ b/net/dsa/dsa2.c
+@@ -249,9 +249,16 @@ static int dsa_tree_setup_default_cpus(s
+ 			dp = &ds->ports[port];
+ 
+ 			if (dsa_port_is_user(dp) || dsa_port_is_dsa(dp)) {
+-				dp->cpu_dp = dst->cpu_dps[i++];
+-				if (i == dst->num_cpu_dps)
+-					i = 0;
++				if (dst->num_cpu_dps == 2) {
++					if (strncmp("wan", dp->name, 3) == 0)
++						dp->cpu_dp = dst->cpu_dps[0];
++					else
++						dp->cpu_dp = dst->cpu_dps[1];
++				} else {
++					dp->cpu_dp = dst->cpu_dps[i++];
++					if (i == dst->num_cpu_dps)
++						i = 0;
++				}
+ 			}
+ 		}
+ 	}
