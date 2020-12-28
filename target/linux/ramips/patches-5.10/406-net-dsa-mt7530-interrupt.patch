@@ -1,0 +1,256 @@
+diff --git a/drivers/net/dsa/mt7530.c b/drivers/net/dsa/mt7530.c
+index 4c61a5895a62..0977216c942b 100644
+--- a/drivers/net/dsa/mt7530.c
++++ b/drivers/net/dsa/mt7530.c
+@@ -10,6 +10,7 @@
+ #include <linux/mfd/syscon.h>
+ #include <linux/module.h>
+ #include <linux/netdevice.h>
++#include <linux/of_irq.h>
+ #include <linux/of_mdio.h>
+ #include <linux/of_net.h>
+ #include <linux/of_platform.h>
+@@ -1689,6 +1690,141 @@ mtk_get_tag_protocol(struct dsa_switch *ds, int port,
+ 	}
+ }
+ 
++static irqreturn_t
++mt7530_irq(int irq, void *data)
++{
++	struct mt7530_priv *priv = data;
++	bool handled = false;
++	int phy;
++	u32 val;
++
++	val = mt7530_read(priv, MT7530_SYS_INT_STS);
++	mt7530_write(priv, MT7530_SYS_INT_STS, val);
++
++	dev_info(priv->dev, "interrupt status: 0x%08x\n", val);
++	dev_info(priv->dev, "interrupt enable: 0x%08x\n", mt7530_read(priv, MT7530_SYS_INT_EN));
++
++	for (phy = 0; phy < MT7530_NUM_PHYS; phy++) {
++		if (val & BIT(phy)) {
++			unsigned int child_irq;
++
++			child_irq = irq_find_mapping(priv->irq_domain, phy);
++			handle_nested_irq(child_irq);
++			handled = true;
++		}
++	}
++
++	return IRQ_RETVAL(handled);
++}
++
++static void
++mt7530_irq_mask(struct irq_data *d)
++{
++	struct mt7530_priv *priv = irq_data_get_irq_chip_data(d);
++
++	priv->irq_enable &= ~BIT(d->hwirq);
++	dev_info(priv->dev, "in irq_mask, hwirq: %lu\n", d->hwirq);
++}
++
++static void
++mt7530_irq_unmask(struct irq_data *d)
++{
++	struct mt7530_priv *priv = irq_data_get_irq_chip_data(d);
++
++	priv->irq_enable |= BIT(d->hwirq);
++	dev_info(priv->dev, "in irq_unmask, hwirq: %lu\n", d->hwirq);
++}
++
++static void
++mt7530_irq_bus_lock(struct irq_data *d)
++{
++	struct mt7530_priv *priv = irq_data_get_irq_chip_data(d);
++
++	mutex_lock_nested(&priv->bus->mdio_lock, MDIO_MUTEX_NESTED);
++	dev_info(priv->dev, "in irq_bus_lock, hwirq: %lu\n", d->hwirq);
++}
++
++static void
++mt7530_irq_bus_sync_unlock(struct irq_data *d)
++{
++	struct mt7530_priv *priv = irq_data_get_irq_chip_data(d);
++
++	mt7530_mii_write(priv, MT7530_SYS_INT_EN, priv->irq_enable);
++	mutex_unlock(&priv->bus->mdio_lock);
++	dev_info(priv->dev, "in irq_bus_sync_unlock, hwirq: %lu\n", d->hwirq);
++}
++
++static struct irq_chip mt7530_irq_chip = {
++	.name = MT7530_NAME,
++	.irq_mask = mt7530_irq_mask,
++	.irq_unmask = mt7530_irq_unmask,
++	.irq_bus_lock = mt7530_irq_bus_lock,
++	.irq_bus_sync_unlock = mt7530_irq_bus_sync_unlock,
++};
++
++static int
++mt7530_irq_map(struct irq_domain *domain, unsigned int irq,
++	       irq_hw_number_t hwirq)
++{
++	irq_set_chip_data(irq, domain->host_data);
++	irq_set_chip_and_handler(irq, &mt7530_irq_chip, handle_simple_irq);
++	irq_set_noprobe(irq);
++
++	return 0;
++}
++
++static const struct irq_domain_ops mt7530_irq_domain_ops = {
++	.map = mt7530_irq_map,
++	.xlate = irq_domain_xlate_onecell,
++};
++
++static int
++mt7530_irq_init(struct mt7530_priv *priv)
++{
++	struct mii_bus *bus = priv->ds->slave_mii_bus;
++	struct device *dev = priv->dev;
++	struct device_node *np = dev->of_node;
++	int parent_irq;
++	int phy, ret;
++
++	parent_irq = of_irq_get(np, 0);
++	if (parent_irq <= 0) {
++		/* Non-fatal error for dtbs that do not have interrupt
++		 * properties.
++		 */
++		dev_warn(dev, "failed to get parent IRQ: %d\n", parent_irq);
++		return 0;
++	}
++
++	priv->irq_domain = irq_domain_add_linear(np, MT7530_NUM_PHYS,
++						&mt7530_irq_domain_ops, priv);
++	if (!priv->irq_domain) {
++		dev_err(dev, "failed to create IRQ domain\n");
++		return -ENOMEM;
++	}
++
++	/* This register must be set for MT7530 to properly fire interrupts */
++	if (priv->id != ID_MT7531)
++		mt7530_set(priv, MT7530_TOP_SIG_CTRL, TOP_SIG_CTRL_NORMAL);
++
++	ret = devm_request_threaded_irq(dev, parent_irq, NULL, mt7530_irq,
++					IRQF_ONESHOT, MT7530_NAME, priv);
++	if (ret) {
++		dev_err(dev, "failed to request IRQ: %d\n", ret);
++		return ret;
++	}
++
++	/* IRQ for internal PHYs */
++	for (phy = 0; phy < MT7530_NUM_PHYS; phy++) {
++		unsigned int irq = irq_create_mapping(priv->irq_domain, phy);
++
++		irq_set_parent(irq, parent_irq);
++		bus->irq[phy] = irq;
++	}
++
++	return 0;
++}
++
+ static int
+ mt7530_setup(struct dsa_switch *ds)
+ {
+@@ -2628,8 +2764,13 @@ static int
+ mt753x_setup(struct dsa_switch *ds)
+ {
+ 	struct mt7530_priv *priv = ds->priv;
++	int ret = priv->info->sw_setup(ds);
+ 
+-	return priv->info->sw_setup(ds);
++	/* Setup interrupt */
++	if (!ret)
++		ret = mt7530_irq_init(priv);
++
++	return ret;
+ }
+ 
+ static int
+@@ -2833,6 +2974,9 @@ mt7530_remove(struct mdio_device *mdiodev)
+ 		dev_err(priv->dev, "Failed to disable io pwr: %d\n",
+ 			ret);
+ 
++	if (priv->irq_domain)
++		irq_domain_remove(priv->irq_domain);
++
+ 	dsa_unregister_switch(priv->ds);
+ 	mutex_destroy(&priv->reg_mutex);
+ }
+@@ -2841,7 +2985,7 @@ static struct mdio_driver mt7530_mdio_driver = {
+ 	.probe  = mt7530_probe,
+ 	.remove = mt7530_remove,
+ 	.mdiodrv.driver = {
+-		.name = "mt7530",
++		.name = MT7530_NAME,
+ 		.of_match_table = mt7530_of_match,
+ 	},
+ };
+diff --git a/drivers/net/dsa/mt7530.h b/drivers/net/dsa/mt7530.h
+index 28e3ae8f1aee..a69e027927d2 100644
+--- a/drivers/net/dsa/mt7530.h
++++ b/drivers/net/dsa/mt7530.h
+@@ -6,7 +6,10 @@
+ #ifndef __MT7530_H
+ #define __MT7530_H
+ 
++#define MT7530_NAME			"mt7530"
++
+ #define MT7530_NUM_PORTS		7
++#define MT7530_NUM_PHYS			5
+ #define MT7530_CPU_PORT			6
+ #define MT7530_NUM_FDB_RECORDS		2048
+ #define MT7530_ALL_MEMBERS		0xff
+@@ -389,6 +392,12 @@ enum mt7531_sgmii_force_duplex {
+ #define  SYS_CTRL_SW_RST		BIT(1)
+ #define  SYS_CTRL_REG_RST		BIT(0)
+ 
++/* Register for system interrupt */
++#define MT7530_SYS_INT_EN		0x7008
++
++/* Register for system interrupt status */
++#define MT7530_SYS_INT_STS		0x700c
++
+ /* Register for PHY Indirect Access Control */
+ #define MT7531_PHY_IAC			0x701C
+ #define  MT7531_PHY_ACS_ST		BIT(31)
+@@ -770,6 +779,8 @@ struct mt7530_priv {
+ 	struct mt7530_port	ports[MT7530_NUM_PORTS];
+ 	/* protect among processes for registers access*/
+ 	struct mutex reg_mutex;
++	struct irq_domain *irq_domain;
++	u32 irq_enable;
+ };
+ 
+ struct mt7530_hw_vlan_entry {
+diff --git a/net/dsa/dsa2.c b/net/dsa/dsa2.c
+index 01f21b0b379a..561a6ebe17e0 100644
+--- a/net/dsa/dsa2.c
++++ b/net/dsa/dsa2.c
+@@ -448,19 +448,19 @@ static int dsa_switch_setup(struct dsa_switch *ds)
+ 	if (err)
+ 		goto unregister_devlink_ports;
+ 
++	ds->slave_mii_bus = devm_mdiobus_alloc(ds->dev);
++	if (!ds->slave_mii_bus) {
++		err = -ENOMEM;
++		goto unregister_notifier;
++	}
++
+ 	err = ds->ops->setup(ds);
+ 	if (err < 0)
+ 		goto unregister_notifier;
+ 
+ 	devlink_params_publish(ds->devlink);
+ 
+-	if (!ds->slave_mii_bus && ds->ops->phy_read) {
+-		ds->slave_mii_bus = devm_mdiobus_alloc(ds->dev);
+-		if (!ds->slave_mii_bus) {
+-			err = -ENOMEM;
+-			goto unregister_notifier;
+-		}
+-
++	if (ds->ops->phy_read) {
+ 		dsa_slave_mii_bus_init(ds);
+ 
+ 		err = mdiobus_register(ds->slave_mii_bus);
