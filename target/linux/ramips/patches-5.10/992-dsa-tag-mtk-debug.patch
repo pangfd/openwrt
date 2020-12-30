@@ -1,0 +1,14 @@
+diff --git a/net/dsa/tag_mtk.c b/net/dsa/tag_mtk.c
+index 38dcdded74c0..0290d210a19c 100644
+--- a/net/dsa/tag_mtk.c
++++ b/net/dsa/tag_mtk.c
+@@ -80,6 +80,9 @@ static struct sk_buff *mtk_tag_rcv(struct sk_buff *skb, struct net_device *dev,
+ 	 */
+ 	phdr = (__be16 *)(skb->data - 2);
+ 	hdr = ntohs(*phdr);
++	int hdrl = ntohl(*(__be32 *)(skb->data - 2));
++	if (hdrl & 0xfff8ffff)
++		net_info_ratelimited("MTK tag value: 0x%08x\n", hdrl);
+ 
+ 	/* Remove MTK tag and recalculate checksum. */
+ 	skb_pull_rcsum(skb, MTK_HDR_LEN);
