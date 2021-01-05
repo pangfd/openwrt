@@ -98,7 +98,7 @@ local function get_api_json(url)
     --	function(chunk) output[#output + 1] = chunk end)
     -- local json_content = util.trim(table.concat(output))
 
-    local json_content = luci.sys.exec("wget-ssl -q --no-check-certificate -O- " .. url)
+    local json_content = luci.sys.exec("/usr/bin/wget -q --no-check-certificate -O- " .. url)
 
     if json_content == "" then return {} end
 
