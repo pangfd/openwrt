@@ -1,0 +1,26 @@
+diff --git a/drivers/net/dsa/mv88e6xxx/chip.c b/drivers/net/dsa/mv88e6xxx/chip.c
+index 27ebcf8b63b6..918eb0d3a008 100644
+--- a/drivers/net/dsa/mv88e6xxx/chip.c
++++ b/drivers/net/dsa/mv88e6xxx/chip.c
+@@ -1511,12 +1511,19 @@ static int mv88e6xxx_port_db_load_purge(struct mv88e6xxx_chip *chip, int port,
+ 		ether_addr_copy(entry.mac, addr);
+ 	}
+ 
++	switch (state) {
++	case 0:
+ 	/* Purge the ATU entry only if no port is using it anymore */
+-	if (!state) {
+ 		entry.portvec &= ~BIT(port);
+ 		if (!entry.portvec)
+ 			entry.state = 0;
+-	} else {
++		break;
++	case MV88E6XXX_G1_ATU_DATA_STATE_UC_STATIC:
++	/* Override existent portvec if unicast */
++		entry.portvec = BIT(port);
++		entry.state = state;
++		break;
++	default:
+ 		entry.portvec |= BIT(port);
+ 		entry.state = state;
+ 	}
